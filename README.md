@@ -50,7 +50,7 @@ The URA Learning Platform is designed to streamline the educational experience b
 
 1. Clone the repository:
 ```bash
-git clone [repository-url]
+git clone https://github.com/Favour123/URA-localstorage.git
 cd ura-learning-platform
 ```
 
