@@ -76,10 +76,12 @@ export const getQuestions = async () => {
   try {
     const { data, error } = await supabase
       .from("questions")
-      .select(`
+      .select(
+        `
         *,
         answers(*)
-      `)
+      `
+      )
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -94,15 +96,17 @@ export const getQuestionById = async (id) => {
   try {
     const { data, error } = await supabase
       .from("questions")
-      .select(`
+      .select(
+        `
         *,
         answers(*)
-      `)
+      `
+      )
       .eq("id", id)
       .single();
 
     if (error) throw error;
-    
+
     return data;
   } catch (error) {
     console.error("Error fetching question:", error);
@@ -118,11 +122,11 @@ export const addQuestion = async (questionData) => {
         {
           title: questionData.title,
           content: questionData.content,
-          user_email: questionData.user_email
-        }
+          user_email: questionData.user_email,
+        },
       ])
       .select();
-    
+
     if (error) throw error;
     return data[0];
   } catch (error) {
@@ -133,20 +137,20 @@ export const addQuestion = async (questionData) => {
 
 export const addAnswer = async (questionId, answerData) => {
   try {
-    console.log('Adding answer:', { questionId, answerData });
-    
+    console.log("Adding answer:", { questionId, answerData });
+
     // Check if the question exists first
     const { error: questionError } = await supabase
       .from("questions")
       .select("id")
       .eq("id", questionId)
       .single();
-      
+
     if (questionError) {
-      console.error('Question check error:', questionError);
+      console.error("Question check error:", questionError);
       throw new Error(`Question not found: ${questionError.message}`);
     }
-    
+
     // Now add the answer
     const { data, error } = await supabase
       .from("answers")
@@ -154,17 +158,17 @@ export const addAnswer = async (questionId, answerData) => {
         {
           question_id: questionId,
           content: answerData.content,
-          user_email: answerData.user_email
-        }
+          user_email: answerData.user_email,
+        },
       ])
       .select();
-    
+
     if (error) {
-      console.error('Insert answer error:', error);
+      console.error("Insert answer error:", error);
       throw error;
     }
-    
-    console.log('Answer added successfully:', data);
+
+    console.log("Answer added successfully:", data);
     return data[0];
   } catch (error) {
     console.error("Error adding answer:", error);
@@ -291,14 +295,14 @@ export const deleteResource = async (resourceId) => {
 //       .select("views")
 //       .eq("id", questionId)
 //       .single();
-//     
+//
 //     const currentViews = question?.views || 0;
-//     
+//
 //     const { error } = await supabase
 //       .from("questions")
 //       .update({ views: currentViews + 1 })
 //       .eq("id", questionId);
-//     
+//
 //     if (error) throw error;
 //   } catch (error) {
 //     console.error("Error incrementing question views:", error);

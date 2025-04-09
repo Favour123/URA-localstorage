@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { addQuestion } from "../../utils/supabaseData";
@@ -36,18 +35,23 @@ export default function AskQuestion() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (
-      !formData.title.trim() ||
-      !formData.content.trim() ||
-      !formData.user_email.trim()
-    ) {
-      setError("Please fill in all required fields including your email");
+    if (!formData.user_email.trim()) {
+      setError("Please provide your email address");
+      return;
+    }
+
+    if (!formData.content.trim()) {
+      setError("Please provide your question");
       return;
     }
 
     try {
       setSubmitting(true);
-      const question = await addQuestion(formData);
+      const question = await addQuestion({
+        title: formData.title || "Question",
+        content: formData.content,
+        user_email: formData.user_email,
+      });
       navigate(`/forum/question/${question.id}`);
     } catch (err) {
       console.error("Error posting question:", err);
@@ -86,70 +90,51 @@ export default function AskQuestion() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-6">
-              <div>
-                <label
-                  htmlFor="title"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Question Title <span className="text-red-500">*</span>
-                </label>
-                <div className="mt-1">
-                  <input
-                    type="text"
-                    name="title"
-                    id="title"
-                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    value={formData.title}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label
+                htmlFor="content"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Your Question <span className="text-red-500">*</span>
+              </label>
+              <div className="mt-1">
+                <textarea
+                  id="content"
+                  name="content"
+                  rows={4}
+                  className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                  value={formData.content}
+                  onChange={handleChange}
+                  required
+                  placeholder="Type your question here..."
+                />
               </div>
+            </div>
 
-              <div>
-                <label
-                  htmlFor="content"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Question Details <span className="text-red-500">*</span>
-                </label>
-                <div className="mt-1">
-                  <textarea
-                    id="content"
-                    name="content"
-                    rows={4}
-                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    value={formData.content}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
+            <div>
+              <label
+                htmlFor="user_email"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Your Email <span className="text-red-500">*</span>
+              </label>
+              <div className="mt-1">
+                <input
+                  type="email"
+                  name="user_email"
+                  id="user_email"
+                  className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                  value={formData.user_email}
+                  onChange={handleChange}
+                  required
+                  placeholder="Enter your email address"
+                />
               </div>
-
-              <div>
-                <label
-                  htmlFor="user_email"
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  Your Email <span className="text-red-500">*</span>
-                </label>
-                <div className="mt-1">
-                  <input
-                    type="email"
-                    name="user_email"
-                    id="user_email"
-                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    value={formData.user_email}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Required to submit a question.
-                </p>
-              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Required to submit a question. We'll use this to notify you when
+                your question is answered.
+              </p>
             </div>
 
             <div className="mt-6 flex justify-end">
