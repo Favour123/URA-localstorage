@@ -1,109 +1,95 @@
-// Local Storage Keys
-const STORAGE_KEYS = {
-  QUESTIONS: 'ura_questions',
-  USER_EMAIL: 'ura_user_email',
-  RESOURCES: 'ura_resources',
+// Helper functions for localStorage management
+
+// Get user email from localStorage
+export const getUserEmail = () => {
+  return localStorage.getItem('userEmail') || '';
 };
 
-// Get data from local storage
-export const getFromStorage = (key) => {
+// Save user email to localStorage
+export const saveUserEmail = (email) => {
+  localStorage.setItem('userEmail', email);
+};
+
+// Get questions from localStorage
+export const getQuestions = () => {
   try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : null;
+    const questions = localStorage.getItem('forumQuestions');
+    return questions ? JSON.parse(questions) : [];
   } catch (error) {
-    console.error('Error reading from localStorage:', error);
+    console.error('Error parsing questions from localStorage:', error);
+    return [];
+  }
+};
+
+// Save questions to localStorage
+export const saveQuestions = (questions) => {
+  try {
+    localStorage.setItem('forumQuestions', JSON.stringify(questions));
+  } catch (error) {
+    console.error('Error saving questions to localStorage:', error);
+  }
+};
+
+// Add a new question to localStorage
+export const addQuestion = (question) => {
+  try {
+    const questions = getQuestions();
+    questions.unshift(question); // Add to beginning of array
+    saveQuestions(questions);
+    return question;
+  } catch (error) {
+    console.error('Error adding question to localStorage:', error);
+    throw error;
+  }
+};
+
+// Get a question by ID from localStorage
+export const getQuestionById = (id) => {
+  try {
+    const questions = getQuestions();
+    return questions.find(q => q.id.toString() === id.toString()) || null;
+  } catch (error) {
+    console.error('Error getting question by ID from localStorage:', error);
     return null;
   }
 };
 
-// Save data to local storage
-export const saveToStorage = (key, data) => {
+// Add an answer to a question in localStorage
+export const addAnswer = (questionId, answer) => {
   try {
-    localStorage.setItem(key, JSON.stringify(data));
-    return true;
+    const questions = getQuestions();
+    const questionIndex = questions.findIndex(q => q.id.toString() === questionId.toString());
+    
+    if (questionIndex === -1) {
+      throw new Error('Question not found');
+    }
+    
+    // Initialize answers array if it doesn't exist
+    if (!questions[questionIndex].answers) {
+      questions[questionIndex].answers = [];
+    }
+    
+    // Create answer object
+    const newAnswer = {
+      id: Date.now(),
+      content: answer.content,
+      user_email: answer.user_email,
+      created_at: new Date().toISOString(),
+      is_admin_response: answer.is_admin_response || false
+    };
+    
+    // Add answer to question
+    questions[questionIndex].answers.push(newAnswer);
+    
+    // Mark question as answered
+    questions[questionIndex].isAnswered = true;
+    
+    // Save updated questions
+    saveQuestions(questions);
+    
+    return newAnswer;
   } catch (error) {
-    console.error('Error saving to localStorage:', error);
-    return false;
-  }
-};
-
-// Questions-specific functions
-export const getQuestions = () => {
-  return getFromStorage(STORAGE_KEYS.QUESTIONS) || [];
-};
-
-export const saveQuestions = (questions) => {
-  return saveToStorage(STORAGE_KEYS.QUESTIONS, questions);
-};
-
-export const addQuestion = (question) => {
-  const questions = getQuestions();
-  questions.unshift(question);
-  return saveQuestions(questions);
-};
-
-// Resources functions
-export const getResources = (category = null) => {
-  const resources = getFromStorage(STORAGE_KEYS.RESOURCES) || [];
-  if (category) {
-    return resources.filter(resource => resource.category === category);
-  }
-  return resources;
-};
-
-export const saveResources = (resources) => {
-  return saveToStorage(STORAGE_KEYS.RESOURCES, resources);
-};
-
-export const addResource = (resource) => {
-  const resources = getResources();
-  const newResource = {
-    ...resource,
-    id: Date.now(),
-    uploadDate: new Date().toISOString(),
-    downloads: 0
-  };
-  resources.unshift(newResource);
-  return saveResources(resources);
-};
-
-// User email functions
-export const getUserEmail = () => {
-  return getFromStorage(STORAGE_KEYS.USER_EMAIL) || '';
-};
-
-export const saveUserEmail = (email) => {
-  return saveToStorage(STORAGE_KEYS.USER_EMAIL, email);
-};
-
-// Add some initial mock data if none exists
-export const initializeMockData = () => {
-  const existingResources = getResources();
-  if (existingResources.length === 0) {
-    const mockResources = [
-      {
-        id: 1,
-        title: 'Introduction to React',
-        description: 'Comprehensive guide to React basics',
-        category: 'lecture-notes',
-        type: 'PDF',
-        downloadUrl: '#',
-        uploadDate: '2024-01-27T10:00:00Z',
-        downloads: 125,
-        fileSize: '2.5 MB'
-      },
-      {
-        id: 2,
-        title: 'Database Systems',
-        description: 'Advanced database concepts',
-        category: 'lecture-notes',
-        type: 'PDF',
-        downloadUrl: '#',
-        uploadDate: '2024-01-26T15:30:00Z',
-        downloads: 89,
-        fileSize: '1.8 MB'
-      }
-    ];
-    saveResources(mockResources);
+    console.error('Error adding answer to localStorage:', error);
+    throw error;
   }
 }; 

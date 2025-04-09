@@ -1,192 +1,239 @@
-import { useState, useEffect } from 'react';
-import { getQuestions, saveQuestions } from '../../utils/localStorage';
+import React, { useState, useEffect } from "react";
+import { supabase } from "../../utils/supabaseClient";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function ManageChats() {
   const [questions, setQuestions] = useState([]);
-  const [selectedQuestion, setSelectedQuestion] = useState(null);
-  const [response, setResponse] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [responses, setResponses] = useState({});
+  const [submitting, setSubmitting] = useState({});
+  const { user } = useAuth();
 
-  // Load questions from localStorage
   useEffect(() => {
-    const storedQuestions = getQuestions();
-    setQuestions(storedQuestions);
+    fetchQuestions();
+
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel("public:questions")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "questions",
+        },
+        () => {
+          fetchQuestions();
+        }
+      )
+      .subscribe();
+
+    const answersSubscription = supabase
+      .channel("public:answers")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "answers",
+        },
+        () => {
+          fetchQuestions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+      supabase.removeChannel(answersSubscription);
+    };
   }, []);
 
-  const handleSubmitResponse = (e) => {
-    e.preventDefault();
-    if (!selectedQuestion || !response.trim()) return;
-
-    setSubmitting(true);
+  const fetchQuestions = async () => {
     try {
-      // Update the question with response
-      const updatedQuestions = questions.map(q => 
-        q.id === selectedQuestion.id
-          ? { ...q, response: response.trim(), isAnswered: true }
-          : q
-      );
-      
-      // Save to localStorage and update state
-      saveQuestions(updatedQuestions);
-      setQuestions(updatedQuestions);
-      
-      setSelectedQuestion(null);
-      setResponse('');
-    } catch (error) {
-      console.error('Failed to submit response:', error);
+      setLoading(true);
+
+      // Direct query to get questions with their answers
+      const { data, error } = await supabase
+        .from("questions")
+        .select(
+          `
+          *,
+          answers(*)
+        `
+        )
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setQuestions(data || []);
+    } catch (err) {
+      console.error("Error fetching questions:", err);
+      setError("Failed to load questions");
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const handleDeleteQuestion = (questionId) => {
-    const updatedQuestions = questions.filter(q => q.id !== questionId);
-    saveQuestions(updatedQuestions);
-    setQuestions(updatedQuestions);
-    if (selectedQuestion?.id === questionId) {
-      setSelectedQuestion(null);
-      setResponse('');
+  const handleResponseChange = (questionId, value) => {
+    setResponses((prev) => ({
+      ...prev,
+      [questionId]: value,
+    }));
+  };
+
+  const handleSubmitResponse = async (questionId) => {
+    if (!responses[questionId]?.trim()) return;
+
+    try {
+      setSubmitting((prev) => ({ ...prev, [questionId]: true }));
+
+      // Direct insert to answers table
+      const { error } = await supabase.from("answers").insert([
+        {
+          question_id: questionId,
+          content: responses[questionId],
+          admin_id: user?.id,
+          admin_email: user?.email || "Admin",
+        },
+      ]);
+
+      if (error) throw error;
+
+      // Clear the response field
+      setResponses((prev) => ({
+        ...prev,
+        [questionId]: "",
+      }));
+
+      // Refresh questions to show the new answer
+      fetchQuestions();
+    } catch (err) {
+      console.error("Error submitting response:", err);
+      alert("Failed to submit response. Please try again.");
+    } finally {
+      setSubmitting((prev) => ({ ...prev, [questionId]: false }));
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Questions List */}
-          <div className="lg:col-span-2">
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-medium text-gray-900">Forum Questions</h2>
-              </div>
-              <div className="divide-y divide-gray-200">
-                {questions.length === 0 ? (
-                  <div className="px-6 py-4 text-center text-gray-500">
-                    No questions yet
-                  </div>
-                ) : (
-                  questions.map((q) => (
-                    <div
-                      key={q.id}
-                      className={`px-6 py-4 cursor-pointer hover:bg-gray-50 ${
-                        selectedQuestion?.id === q.id ? 'bg-gray-50' : ''
-                      }`}
-                      onClick={() => {
-                        setSelectedQuestion(q);
-                        setResponse(q.response || '');
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex-shrink-0">
-                            <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
-                              <span className="text-primary-600 font-medium">
-                                {q.email[0].toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{q.email}</p>
-                            <p className="text-sm text-gray-500">
-                              {new Date(q.timestamp).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              q.isAnswered
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {q.isAnswered ? 'Answered' : 'Pending'}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteQuestion(q.id);
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <p className="text-sm text-gray-900">{q.question}</p>
-                        {q.response && (
-                          <div className="mt-2 bg-gray-50 rounded p-3">
-                            <p className="text-sm text-gray-700">{q.response}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
 
-          {/* Response Form */}
-          <div className="lg:col-span-1">
-            <div className="bg-white shadow rounded-lg sticky top-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Respond to Question</h3>
-              </div>
-              {selectedQuestion ? (
-                <form onSubmit={handleSubmitResponse} className="p-6">
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Selected Question
-                    </label>
-                    <p className="mt-1 text-sm text-gray-900">{selectedQuestion.question}</p>
-                    <p className="mt-1 text-sm text-gray-500">From: {selectedQuestion.email}</p>
-                  </div>
-                  <div>
-                    <label htmlFor="response" className="block text-sm font-medium text-gray-700">
-                      Your Response
-                    </label>
-                    <textarea
-                      id="response"
-                      rows={4}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                      value={response}
-                      onChange={(e) => setResponse(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="mt-4 flex justify-end space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedQuestion(null);
-                        setResponse('');
-                      }}
-                      className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
-                    >
-                      {submitting ? 'Submitting...' : 'Submit Response'}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="p-6 text-center text-gray-500">
-                  Select a question to respond
-                </div>
-              )}
-            </div>
-          </div>
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-red-500 text-center">
+          <p className="text-xl font-bold">Error</p>
+          <p>{error}</p>
+          <button
+            onClick={fetchQuestions}
+            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+          >
+            Try Again
+          </button>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">
+        Manage Forum Questions
+      </h1>
+
+      {questions.length === 0 ? (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg p-6 text-center">
+          <p className="text-gray-500">No questions have been submitted yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {questions.map((question) => (
+            <div
+              key={question.id}
+              className="bg-white shadow overflow-hidden sm:rounded-lg"
+            >
+              <div className="px-4 py-5 sm:px-6">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">
+                  {question.title || question.question}
+                </h3>
+                <p className="mt-1 max-w-2xl text-sm text-gray-500">
+                  Posted by {question.user_email || question.email} on{" "}
+                  {new Date(
+                    question.created_at || question.timestamp
+                  ).toLocaleString()}
+                </p>
+              </div>
+              <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+                <p className="text-gray-900">
+                  {question.content || question.question}
+                </p>
+
+                {question.answers && question.answers.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="text-md font-medium text-gray-900 mb-3">
+                      Answers:
+                    </h4>
+                    <div className="space-y-4">
+                      {question.answers.map((answer) => (
+                        <div
+                          key={answer.id}
+                          className="bg-gray-50 p-4 rounded-md"
+                        >
+                          <p className="text-gray-800">{answer.content}</p>
+                          <p className="mt-2 text-xs text-gray-500">
+                            Answered by {answer.user_email} on{" "}
+                            {new Date(answer.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-6">
+                  <label
+                    htmlFor={`response-${question.id}`}
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Add Answer
+                  </label>
+                  <div className="mt-1">
+                    <textarea
+                      id={`response-${question.id}`}
+                      rows={3}
+                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      value={responses[question.id] || ""}
+                      onChange={(e) =>
+                        handleResponseChange(question.id, e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="mt-2">
+                    <button
+                      onClick={() => handleSubmitResponse(question.id)}
+                      disabled={
+                        submitting[question.id] ||
+                        !responses[question.id]?.trim()
+                      }
+                      className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                    >
+                      {submitting[question.id]
+                        ? "Submitting..."
+                        : "Submit Answer"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
-} 
+}

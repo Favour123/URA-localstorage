@@ -1,62 +1,207 @@
-import { useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../utils/supabaseClient";
 
 export default function ProfileManagement() {
-  const { currentUser } = useAuth();
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
-    name: currentUser?.displayName || '',
-    email: currentUser?.email || '',
+    name: "",
+    email: "",
     avatar: null,
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+    avatar_url: null,
   });
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [loading, setLoading] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState(null);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!user) return;
+
+      try {
+        setLoading(true);
+
+        // Direct query to the profiles table - this works now that the RLS policies are fixed
+        const { data: profileData, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+
+        if (error) throw error;
+
+        // Set form data
+        setFormData((prev) => ({
+          ...prev,
+          name: profileData?.name || user.user_metadata?.full_name || "",
+          email: user.email || "",
+          avatar_url: profileData?.avatar_url || null,
+        }));
+
+        // Set avatar URL if available
+        if (profileData?.avatar_url) {
+          setAvatarUrl(profileData.avatar_url);
+        }
+      } catch (error) {
+        console.error("Error loading profile:", error);
+        setMessage({
+          type: "error",
+          text: "Failed to load profile data. Please try refreshing the page.",
+        });
+        // Set default values if profile load fails
+        setFormData((prev) => ({
+          ...prev,
+          name: user.user_metadata?.full_name || "",
+          email: user.email || "",
+          avatar_url: null,
+        }));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [user]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
   const handleAvatarChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        avatar: file
+        avatar: file,
       }));
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) {
+      setMessage({
+        type: "error",
+        text: "You must be logged in to update your profile",
+      });
+      return;
+    }
+
     setLoading(true);
-    setMessage({ type: '', text: '' });
+    setMessage({ type: "", text: "" });
 
     try {
-      // Mock API call - replace with actual update logic
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      // Validate password if changing
+      if (
+        formData.newPassword ||
+        formData.confirmPassword ||
+        formData.currentPassword
+      ) {
+        if (formData.newPassword !== formData.confirmPassword) {
+          throw new Error("New passwords don't match");
+        }
+        if (!formData.currentPassword) {
+          throw new Error("Current password is required to change password");
+        }
+      }
+
+      // Handle avatar upload first if there's a new avatar
+      let avatarUrl = formData.avatar_url;
+      if (formData.avatar) {
+        try {
+          const fileExt = formData.avatar.name.split(".").pop();
+          const fileName = `${user.id}/avatar.${fileExt}`;
+
+          // First, try to remove any existing avatar
+          const { data: existingFiles } = await supabase.storage
+            .from("avatars")
+            .list(user.id);
+
+          if (existingFiles && existingFiles.length > 0) {
+            const filesToRemove = existingFiles.map(
+              (file) => `${user.id}/${file.name}`
+            );
+            await supabase.storage.from("avatars").remove(filesToRemove);
+          }
+
+          // Upload new avatar
+          const { error: uploadError } = await supabase.storage
+            .from("avatars")
+            .upload(fileName, formData.avatar, {
+              cacheControl: "3600",
+              contentType: formData.avatar.type,
+              upsert: true,
+            });
+
+          if (uploadError) {
+            console.error("Upload error:", uploadError);
+            throw new Error("Failed to upload avatar");
+          }
+
+          // Get the public URL
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from("avatars").getPublicUrl(fileName);
+
+          avatarUrl = publicUrl;
+          setAvatarUrl(publicUrl);
+        } catch (error) {
+          console.error("Error uploading avatar:", error);
+          throw error;
+        }
+      }
+
+      // Update profile with the new avatar URL
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          name: formData.name,
+          avatar_url: avatarUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (updateError) {
+        console.error("Profile update error:", updateError);
+        throw new Error("Failed to update profile");
+      }
+
+      // If password change is requested
+      if (formData.currentPassword && formData.newPassword) {
+        const { error: passwordError } = await supabase.auth.updateUser({
+          password: formData.newPassword,
+        });
+
+        if (passwordError) {
+          console.error("Password update error:", passwordError);
+          throw new Error("Failed to update password");
+        }
+      }
+
       setMessage({
-        type: 'success',
-        text: 'Profile updated successfully!'
+        type: "success",
+        text: "Profile updated successfully!",
       });
-      
+
       // Reset password fields
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+        avatar: null, // Reset avatar after upload
       }));
     } catch (error) {
       setMessage({
-        type: 'error',
-        text: 'Failed to update profile. Please try again.'
+        type: "error",
+        text: error.message || "Failed to update profile. Please try again.",
       });
     } finally {
       setLoading(false);
@@ -68,18 +213,20 @@ export default function ProfileManagement() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white shadow rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-medium text-gray-900">Profile Settings</h2>
+            <h2 className="text-xl font-medium text-gray-900">
+              Profile Settings
+            </h2>
           </div>
 
           {message.text && (
             <div
               className={`px-6 py-4 ${
-                message.type === 'success' ? 'bg-green-50' : 'bg-red-50'
+                message.type === "success" ? "bg-green-50" : "bg-red-50"
               }`}
             >
               <p
                 className={`text-sm ${
-                  message.type === 'success' ? 'text-green-700' : 'text-red-700'
+                  message.type === "success" ? "text-green-700" : "text-red-700"
                 }`}
               >
                 {message.text}
@@ -90,24 +237,30 @@ export default function ProfileManagement() {
           <form onSubmit={handleSubmit} className="px-6 py-4 space-y-6">
             {/* Avatar Section */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Profile Photo</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Profile Photo
+              </label>
               <div className="mt-2 flex items-center space-x-4">
-                <div className="h-16 w-16 rounded-full bg-primary-100 flex items-center justify-center overflow-hidden">
-                  {formData.avatar ? (
+                <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-100">
+                  {avatarUrl ? (
                     <img
-                      src={URL.createObjectURL(formData.avatar)}
-                      alt="Profile preview"
+                      src={avatarUrl}
+                      alt="Profile"
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    <span className="text-2xl text-primary-600 font-medium">
-                      {formData.name[0]?.toUpperCase() || 'A'}
-                    </span>
+                    <svg
+                      className="h-full w-full text-gray-300"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
                   )}
                 </div>
                 <label
                   htmlFor="avatar-upload"
-                  className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  className="cursor-pointer bg-white py-2 px-3 border border-gray-300 rounded-md shadow-sm text-sm leading-4 font-medium text-gray-700 hover:bg-gray-50 focus:outline-none"
                 >
                   Change
                   <input
@@ -115,118 +268,120 @@ export default function ProfileManagement() {
                     name="avatar"
                     type="file"
                     accept="image/*"
-                    onChange={handleAvatarChange}
                     className="sr-only"
+                    onChange={handleAvatarChange}
                   />
                 </label>
+                {formData.avatar && (
+                  <span className="text-sm text-gray-500">
+                    {formData.avatar.name}
+                  </span>
+                )}
               </div>
             </div>
 
-            {/* Basic Info */}
-            <div className="grid grid-cols-1 gap-6">
+            {/* Name Field */}
+            <div>
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Name
+              </label>
+              <input
+                type="text"
+                name="name"
+                id="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              />
+            </div>
+
+            {/* Email Field (Readonly) */}
+            <div>
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Email
+              </label>
+              <input
+                type="email"
+                name="email"
+                id="email"
+                value={formData.email}
+                readOnly
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-gray-50 text-gray-500 sm:text-sm"
+              />
+            </div>
+
+            {/* Password Change Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                Change Password
+              </h3>
+
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                  Name
+                <label
+                  htmlFor="currentPassword"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Current Password
                 </label>
                 <input
-                  type="text"
-                  id="name"
-                  name="name"
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.name}
+                  type="password"
+                  name="currentPassword"
+                  id="currentPassword"
+                  value={formData.currentPassword}
                   onChange={handleInputChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
               </div>
 
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                  Email
+                <label
+                  htmlFor="newPassword"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  New Password
                 </label>
                 <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.email}
+                  type="password"
+                  name="newPassword"
+                  id="newPassword"
+                  value={formData.newPassword}
                   onChange={handleInputChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="confirmPassword"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  id="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleInputChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
               </div>
             </div>
 
-            {/* Password Change */}
-            <div className="space-y-6">
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                  <div className="w-full border-t border-gray-300" />
-                </div>
-                <div className="relative flex justify-center">
-                  <span className="px-3 bg-white text-sm text-gray-500">Change Password</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-6">
-                <div>
-                  <label
-                    htmlFor="currentPassword"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Current Password
-                  </label>
-                  <input
-                    type="password"
-                    id="currentPassword"
-                    name="currentPassword"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                    value={formData.currentPassword}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="newPassword"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    id="newPassword"
-                    name="newPassword"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                    value={formData.newPassword}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="confirmPassword"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Confirm New Password
-                  </label>
-                  <input
-                    type="password"
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
+            {/* Submit Button */}
+            <div className="pt-5">
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
               >
-                {loading ? 'Saving...' : 'Save Changes'}
+                {loading ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </form>
@@ -234,4 +389,4 @@ export default function ProfileManagement() {
       </div>
     </div>
   );
-} 
+}

@@ -1,100 +1,94 @@
-import { useState, useEffect } from 'react';
-import { verifyLocationAccess, getLocationDetails } from '../../utils/locationVerification';
+import React, { useState, useEffect } from "react";
+import { verifyLocation } from "../../utils/locationVerification";
 
 export default function LocationRestriction({ children }) {
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasAccess, setHasAccess] = useState(false);
-  const [locationDetails, setLocationDetails] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isAllowed, setIsAllowed] = useState(false);
+  const [locationInfo, setLocationInfo] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
-    checkAccess();
+    checkLocation();
   }, []);
 
-  const checkAccess = async () => {
-    const access = await verifyLocationAccess();
-    if (!access) {
-      const details = await getLocationDetails();
-      setLocationDetails(details);
+  const checkLocation = async () => {
+    try {
+      setLoading(true);
+      const result = await verifyLocation();
+      setIsAllowed(result.allowed);
+      setLocationInfo(result);
+    } catch (error) {
+      console.error("Location check failed:", error);
+      setIsAllowed(false);
+      setLocationInfo({ error: error.message });
+    } finally {
+      setLoading(false);
     }
-    setHasAccess(access);
-    setIsLoading(false);
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Verifying your location...</p>
-          <p className="mt-2 text-sm text-gray-500">Please allow location access if prompted</p>
+          <p className="mt-2 text-sm text-gray-500">
+            Please allow location access if prompted
+          </p>
         </div>
       </div>
     );
   }
 
-  if (!hasAccess) {
+  if (!isAllowed) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md mx-auto text-center px-4">
-          <div className="bg-white rounded-lg shadow-md p-8">
-            <div className="text-red-600 text-5xl mb-4">⚠️</div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Restricted</h1>
-            <p className="text-gray-600 mb-6">
-              This resource is only accessible from within Adeleke University campus (within 5km radius).
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
+          <div>
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+              Access Restricted
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              {locationInfo?.error || "Unable to verify your location"}
             </p>
-            <div className="text-sm text-gray-500 mb-4">
-              <p>Please ensure:</p>
-              <ul className="list-disc list-inside mt-2">
-                <li>You are physically present on campus</li>
-                <li>You have enabled location services</li>
-                <li>You are connected to the university network</li>
-              </ul>
-            </div>
-            
-            {locationDetails && (
-              <div className="mt-6">
-                <button
-                  onClick={() => setShowDetails(!showDetails)}
-                  className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-                >
-                  {showDetails ? 'Hide Details' : 'Show Details'}
-                </button>
-                {showDetails && (
-                  <div className="mt-4 text-left bg-gray-50 p-4 rounded-md">
-                    <p className="text-sm text-gray-600">
-                      <strong>Your Location:</strong><br />
-                      {locationDetails.gps ? (
-                        <>
-                          Latitude: {locationDetails.gps.latitude.toFixed(4)}<br />
-                          Longitude: {locationDetails.gps.longitude.toFixed(4)}
-                        </>
-                      ) : (
-                        'GPS location not available'
-                      )}
-                    </p>
-                    <p className="text-sm text-gray-600 mt-2">
-                      <strong>IP Address:</strong> {locationDetails.ip}
-                    </p>
-                    <p className="text-sm text-gray-600 mt-2">
-                      <strong>Time:</strong> {new Date(locationDetails.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                )}
+          </div>
+          <div className="text-center">
+            <p className="text-sm text-gray-500">
+              This resource is only available within 10km of Adeleke University
+            </p>
+            {locationInfo?.distance && (
+              <p className="mt-2 text-sm text-gray-500">
+                You are currently {locationInfo.distance}km away
+              </p>
+            )}
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="mt-4 text-indigo-600 hover:text-indigo-500"
+            >
+              {showDetails ? "Hide Details" : "Show Details"}
+            </button>
+            {showDetails && locationInfo?.location && (
+              <div className="mt-4 text-left bg-gray-100 p-4 rounded-md">
+                <p className="text-sm">Your Location:</p>
+                <p className="text-xs text-gray-500">
+                  Latitude: {locationInfo.location.latitude}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Longitude: {locationInfo.location.longitude}
+                </p>
               </div>
             )}
-            
-            <button
-              onClick={checkAccess}
-              className="mt-6 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            >
-              Try Again
-            </button>
           </div>
+          <button
+            onClick={checkLocation}
+            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
   }
 
   return children;
-} 
+}

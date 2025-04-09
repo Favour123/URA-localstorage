@@ -1,9 +1,23 @@
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 
-export default function PrivateRoute({ children }) {
-  const { currentUser } = useAuth();
+function PrivateRoute({ children }) {
+  const { user, loading } = useAuth();
 
-  // Check if user is logged in and has admin role
-  return currentUser?.role === 'admin' ? children : <Navigate to="/admin/login" />;
-} 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
+  // Check if user is authenticated and has admin role
+  if (!user) {
+    return <Navigate to="/admin/login" />;
+  }
+
+  return children;
+}
+
+export default PrivateRoute;

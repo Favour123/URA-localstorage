@@ -1,16 +1,20 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
-import PrivateRoute from './components/routes/PrivateRoute';
-import LocationRestriction from './components/common/LocationRestriction';
-import LandingPage from './components/user/LandingPage';
-import ResourceDetail from './components/user/ResourceDetail';
-import ResourceCategory from './components/user/ResourceCategory';
-import Forum from './components/user/Forum';
-import ResourceUpload from './components/admin/ResourceUpload';
-import ManageChats from './components/admin/ManageChats';
-import ProfileManagement from './components/admin/ProfileManagement';
-import Navigation from './components/common/Navigation';
-import Login from './components/auth/Login';
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import PrivateRoute from "./components/routes/PrivateRoute";
+import LocationRestriction from "./components/common/LocationRestriction";
+import LandingPage from "./components/user/LandingPage";
+import ResourceDetail from "./components/user/ResourceDetail";
+import ResourceCategory from "./components/user/ResourceCategory";
+import Forum from "./components/user/Forum";
+import ResourceUpload from "./components/admin/ResourceUpload";
+import ManageChats from "./components/admin/ManageChats";
+import ProfileManagement from "./components/admin/ProfileManagement";
+import AccessLogs from "./components/admin/AccessLogs";
+import Navigation from "./components/common/Navigation";
+import Login from "./components/auth/Login";
+import AdminSignup from "./components/auth/AdminSignup";
+import AskQuestion from "./components/user/AskQuestion";
+import QuestionDetail from "./components/user/QuestionDetail";
 
 function App() {
   return (
@@ -20,39 +24,41 @@ function App() {
           <Navigation />
           <Routes>
             {/* Public Routes - Location Restricted */}
-            <Route 
-              path="/" 
+            <Route
+              path="/"
               element={
                 <LocationRestriction>
                   <LandingPage />
                 </LocationRestriction>
-              } 
+              }
             />
-            <Route 
-              path="/resource/:id" 
+            <Route
+              path="/resource/:id"
               element={
                 <LocationRestriction>
                   <ResourceDetail />
                 </LocationRestriction>
-              } 
+              }
             />
-            <Route 
-              path="/resources/:categoryId" 
+            <Route
+              path="/resources/:categoryId"
               element={
                 <LocationRestriction>
                   <ResourceCategory />
                 </LocationRestriction>
-              } 
+              }
             />
-            <Route 
-              path="/forum" 
+            <Route
+              path="/forum"
               element={
                 <LocationRestriction>
                   <Forum />
                 </LocationRestriction>
-              } 
+              }
             />
-            
+            <Route path="/forum/ask" element={<AskQuestion />} />
+            <Route path="/forum/question/:id" element={<QuestionDetail />} />
+
             {/* Admin Routes - Not Location Restricted */}
             <Route path="/admin/login" element={<Login />} />
             <Route
@@ -79,6 +85,15 @@ function App() {
                 </PrivateRoute>
               }
             />
+            <Route
+              path="/admin/logs"
+              element={
+                <PrivateRoute>
+                  <AccessLogs />
+                </PrivateRoute>
+              }
+            />
+            <Route path="/admin/signup" element={<AdminSignup />} />
           </Routes>
         </div>
       </AuthProvider>
@@ -86,4 +101,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;
