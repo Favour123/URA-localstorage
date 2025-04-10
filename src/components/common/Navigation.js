@@ -1,18 +1,18 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function Navigation() {
-  const { currentUser, logout } = useAuth();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const isAdmin = currentUser?.role === 'admin';
 
-  const handleLogout = async () => {
+  const handleSignOut = async () => {
     try {
-      await logout();
-      setIsMobileMenuOpen(false);
+      await signOut();
+      navigate("/admin/login");
     } catch (error) {
-      console.error('Failed to log out:', error);
+      console.error("Error signing out:", error.message);
     }
   };
 
@@ -42,8 +42,14 @@ export default function Navigation() {
             </div>
           </div>
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
-            {isAdmin ? (
+            {user ? (
               <div className="flex items-center space-x-4">
+                <Link
+                  to="/admin/profile"
+                  className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
+                >
+                  Profile
+                </Link>
                 <Link
                   to="/admin/upload"
                   className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
@@ -57,16 +63,16 @@ export default function Navigation() {
                   Manage Chats
                 </Link>
                 <Link
-                  to="/admin/profile"
+                  to="/admin/logs"
                   className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
                 >
-                  Profile
+                  Access Logs
                 </Link>
                 <button
-                  onClick={handleLogout}
+                  onClick={handleSignOut}
                   className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
                 >
-                  Logout
+                  Sign Out
                 </button>
               </div>
             ) : (
@@ -86,19 +92,39 @@ export default function Navigation() {
             >
               <span className="sr-only">Open main menu</span>
               {!isMobileMenuOpen ? (
-                <svg className="block h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <svg
+                  className="block h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
                 </svg>
               ) : (
-                <svg className="block h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="block h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               )}
             </button>
           </div>
         </div>
       </div>
-      <div className={`${isMobileMenuOpen ? 'block' : 'hidden'} sm:hidden`}>
+      <div className={`${isMobileMenuOpen ? "block" : "hidden"} sm:hidden`}>
         <div className="pt-2 pb-3 space-y-1">
           <Link
             to="/"
@@ -116,8 +142,15 @@ export default function Navigation() {
           </Link>
         </div>
         <div className="pt-4 pb-3 border-t border-gray-200">
-          {isAdmin ? (
+          {user ? (
             <div className="space-y-1">
+              <Link
+                to="/admin/profile"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-gray-500 hover:bg-gray-50 hover:text-gray-700 block px-3 py-2 rounded-md text-base font-medium"
+              >
+                Profile
+              </Link>
               <Link
                 to="/admin/upload"
                 onClick={() => setIsMobileMenuOpen(false)}
@@ -133,17 +166,17 @@ export default function Navigation() {
                 Manage Chats
               </Link>
               <Link
-                to="/admin/profile"
+                to="/admin/logs"
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="text-gray-500 hover:bg-gray-50 hover:text-gray-700 block px-3 py-2 rounded-md text-base font-medium"
               >
-                Profile
+                Access Logs
               </Link>
               <button
-                onClick={handleLogout}
+                onClick={handleSignOut}
                 className="w-full text-left text-gray-500 hover:bg-gray-50 hover:text-gray-700 block px-3 py-2 rounded-md text-base font-medium"
               >
-                Logout
+                Sign Out
               </button>
             </div>
           ) : (
@@ -159,4 +192,4 @@ export default function Navigation() {
       </div>
     </nav>
   );
-} 
+}

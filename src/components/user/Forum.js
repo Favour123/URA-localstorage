@@ -1,90 +1,71 @@
-import { useState, useEffect } from 'react';
-import {
-  getQuestions,
-  addQuestion,
-  getUserEmail,
-  saveUserEmail
-} from '../../utils/localStorage';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { getQuestions } from "../../utils/supabaseData";
+import { supabase } from "../../utils/supabaseClient";
 
 export default function Forum() {
-  const [question, setQuestion] = useState('');
   const [questions, setQuestions] = useState([]);
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
-  // Load initial data from localStorage
   useEffect(() => {
-    const storedQuestions = getQuestions();
-    const storedEmail = getUserEmail();
-    
-    if (storedQuestions.length > 0) {
-      setQuestions(storedQuestions);
-    } else {
-      // Initial mock data if no questions exist
-      const initialQuestions = [
-        {
-          id: 1,
-          question: 'How do I access the course materials?',
-          email: 'user@example.com',
-          timestamp: '2024-01-27T10:00:00',
-          response: 'You can find all course materials on the home page. Use the search and filter options to locate specific resources.',
-          isAnswered: true
-        },
-        {
-          id: 2,
-          question: 'When will the next batch of resources be uploaded?',
-          email: 'student@example.com',
-          timestamp: '2024-01-27T11:30:00',
-          isAnswered: false
-        }
-      ];
-      setQuestions(initialQuestions);
-      addQuestion(initialQuestions[0]);
-      addQuestion(initialQuestions[1]);
-    }
+    fetchQuestions();
 
-    if (storedEmail) {
-      setEmail(storedEmail);
-    }
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel("public:questions")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "questions",
+        },
+        () => {
+          fetchQuestions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, []);
 
-  const handleQuestionSubmit = (e) => {
-    e.preventDefault();
-    if (question.trim()) {
-      if (!email) {
-        setPendingQuestion(question.trim());
-        setShowEmailModal(true);
-      } else {
-        submitQuestion(question.trim(), email);
-      }
+  const fetchQuestions = async () => {
+    try {
+      setLoading(true);
+      const data = await getQuestions();
+      setQuestions(data);
+    } catch (err) {
+      console.error("Error fetching questions:", err);
+      setError("Failed to load questions");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleAskQuestion = () => {
+    navigate("/forum/ask");
   };
 
   const handleEmailSubmit = (e) => {
     e.preventDefault();
     if (email && pendingQuestion) {
-      saveUserEmail(email);
-      submitQuestion(pendingQuestion, email);
+      navigate("/forum/ask", {
+        state: {
+          title: pendingQuestion.substring(0, 100),
+          content: pendingQuestion,
+          user_email: email,
+        },
+      });
       setShowEmailModal(false);
       setPendingQuestion(null);
     }
-  };
-
-  const submitQuestion = (questionText, userEmail) => {
-    const newQuestion = {
-      id: Date.now(),
-      question: questionText,
-      email: userEmail,
-      timestamp: new Date().toISOString(),
-      isAnswered: false
-    };
-    
-    addQuestion(newQuestion);
-    setQuestions(prevQuestions => [newQuestion, ...prevQuestions]);
-    setQuestion('');
   };
 
   if (loading && questions.length === 0) {
@@ -106,83 +87,80 @@ export default function Forum() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        {/* Question Form */}
-        <div className="bg-white shadow rounded-lg overflow-hidden mb-6">
-          <form onSubmit={handleQuestionSubmit} className="p-6">
-            <div>
-              <label htmlFor="question" className="block text-sm font-medium text-gray-700">
-                Ask a Question
-              </label>
-              <div className="mt-1">
-                <textarea
-                  id="question"
-                  rows={3}
-                  className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="What would you like to know?"
-                  required
-                />
-              </div>
-            </div>
-            <div className="mt-3">
-              <button
-                type="submit"
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-              >
-                Submit Question
-              </button>
-            </div>
-          </form>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Forum Discussions
+          </h1>
+          <button
+            onClick={handleAskQuestion}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+          >
+            Ask a Question
+          </button>
         </div>
 
-        {/* Questions List */}
         <div className="space-y-6">
-          {questions.map((q) => (
-            <div key={q.id} className="bg-white shadow rounded-lg overflow-hidden">
-              <div className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0">
-                      <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
-                        <span className="text-primary-600 font-medium">
-                          {q.email[0].toUpperCase()}
-                        </span>
+          {questions.length === 0 ? (
+            <div className="bg-white shadow rounded-lg p-6 text-center">
+              <p className="text-gray-500">
+                No questions have been asked yet. Be the first to ask a
+                question!
+              </p>
+            </div>
+          ) : (
+            questions.map((q) => (
+              <div
+                key={q.id}
+                className="bg-white shadow rounded-lg overflow-hidden"
+              >
+                <div className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="flex-shrink-0">
+                        <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
+                          <span className="text-primary-600 font-medium">
+                            {q.user_email && q.user_email.length > 0
+                              ? q.user_email[0].toUpperCase()
+                              : "?"}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {q.user_email || "Anonymous"}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(q.created_at).toLocaleString()}
+                        </p>
                       </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{q.email}</p>
-                      <p className="text-sm text-gray-500">
-                        {new Date(q.timestamp).toLocaleString()}
-                      </p>
-                    </div>
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        q.answers && q.answers.length > 0
+                          ? "bg-green-100 text-green-800"
+                          : "bg-yellow-100 text-yellow-800"
+                      }`}
+                    >
+                      {q.answers && q.answers.length > 0
+                        ? "Answered"
+                        : "Pending"}
+                    </span>
                   </div>
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      q.isAnswered
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}
-                  >
-                    {q.isAnswered ? 'Answered' : 'Pending'}
-                  </span>
-                </div>
-                <div className="mt-4">
-                  <p className="text-gray-900">{q.question}</p>
-                  {q.response && (
-                    <div className="mt-4 bg-gray-50 rounded-md p-4">
-                      <p className="text-sm text-gray-700">{q.response}</p>
-                      {q.respondedBy && (
-                        <p className="mt-2 text-xs text-gray-500">
-                          Answered by {q.respondedBy.name} on {new Date(q.responseDate).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                  <div className="mt-4">
+                    <p className="text-gray-900">{q.title || q.content}</p>
+                  </div>
+                  <div className="mt-4 text-right">
+                    <button
+                      onClick={() => navigate(`/forum/question/${q.id}`)}
+                      className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                    >
+                      View Details →
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Email Modal */}
@@ -194,8 +172,11 @@ export default function Forum() {
               </h3>
               <form onSubmit={handleEmailSubmit}>
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                    Email address
+                  <label
+                    htmlFor="email"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Email address <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="email"
@@ -206,6 +187,9 @@ export default function Forum() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Enter your email"
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Your email is required to submit a question.
+                  </p>
                 </div>
                 <div className="mt-4 flex justify-end space-x-3">
                   <button
@@ -232,4 +216,4 @@ export default function Forum() {
       </div>
     </div>
   );
-} 
+}

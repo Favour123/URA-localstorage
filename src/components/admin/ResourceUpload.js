@@ -1,207 +1,336 @@
-import { useState } from 'react';
-import { addResource } from '../../utils/localStorage';
+import React, { useState, useEffect, useRef } from "react";
+import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../utils/supabaseClient";
 
-const RESOURCE_CATEGORIES = {
-  'lecture-notes': {
-    title: 'Lecture Notes',
-    allowedTypes: ['.pdf', '.docx', '.ppt', '.pptx']
-  },
-  'research-papers': {
-    title: 'Research Papers',
-    allowedTypes: ['.pdf']
-  },
-  'past-questions': {
-    title: 'Past Questions',
-    allowedTypes: ['.pdf', '.docx']
-  },
-  'journal-papers': {
-    title: 'Journal Papers',
-    allowedTypes: ['.pdf']
-  },
-  'conference-videos': {
-    title: 'Conference Videos',
-    allowedTypes: ['.mp4', '.webm']
-  },
-  'other-resources': {
-    title: 'Other Resources',
-    allowedTypes: ['.pdf', '.docx', '.mp4', '.zip']
-  }
-};
+const RESOURCE_CATEGORIES = [
+  { value: "conference-videos", label: "Conference Videos" },
+  { value: "lecture-notes", label: "Lecture Notes" },
+  { value: "past-questions", label: "Past Questions" },
+  { value: "research-papers", label: "Research Papers" },
+  { value: "journal-papers", label: "Journal Papers" },
+  { value: "textbooks", label: "Textbooks" },
+  { value: "other-resources", label: "Other Resources" },
+];
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export default function ResourceUpload() {
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    category: '',
-    courseCode: '',
-    author: '',
-    department: '',
-    level: '',
-    semester: '',
-    academicYear: '',
-    tags: '',
-    file: null
-  });
+  const { user } = useAuth();
+  const [file, setFile] = useState(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState(RESOURCE_CATEGORIES[0].value);
   const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [dragActive, setDragActive] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [resources, setResources] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [resourceToDelete, setResourceToDelete] = useState(null);
+  const [newlyAddedId, setNewlyAddedId] = useState(null);
+  const resourcesRef = useRef(null);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
+  // Subscribe to changes in the resources table
+  useEffect(() => {
+    const subscription = supabase
+      .channel("public:resources")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "resources",
+        },
+        () => {
+          fetchResources();
+        }
+      )
+      .subscribe();
 
-  const validateFile = (file) => {
-    if (!file) return 'Please select a file';
-    if (file.size > MAX_FILE_SIZE) return 'File size exceeds 50MB limit';
-    
-    const category = RESOURCE_CATEGORIES[formData.category];
-    if (!category) return 'Please select a valid category';
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
 
-    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-    if (!category.allowedTypes.includes(fileExtension)) {
-      return `Invalid file type. Allowed types for ${category.title}: ${category.allowedTypes.join(', ')}`;
+  useEffect(() => {
+    fetchResources();
+  }, []);
+
+  const fetchResources = async () => {
+    try {
+      setLoading(true);
+
+      // Direct query to resources table - this works now that the RLS policies are fixed
+      const { data, error } = await supabase
+        .from("resources")
+        .select("*")
+        .order("upload_date", { ascending: false });
+
+      if (error) throw error;
+      setResources(data || []);
+    } catch (error) {
+      console.error("Error fetching resources:", error);
+      setMessage({
+        type: "error",
+        text: "Failed to load resources. Please refresh the page.",
+      });
+    } finally {
+      setLoading(false);
     }
-
-    return null;
   };
+
+  // Scroll to resources table after successful upload
+  useEffect(() => {
+    if (newlyAddedId && resourcesRef.current) {
+      resourcesRef.current.scrollIntoView({ behavior: "smooth" });
+
+      // Clear the highlight after 5 seconds
+      const timer = setTimeout(() => {
+        setNewlyAddedId(null);
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [newlyAddedId]);
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const error = validateFile(file);
-      if (error) {
-        setMessage({ type: 'error', text: error });
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        setMessage({
+          type: "error",
+          text: `File size exceeds the limit of ${formatFileSize(
+            MAX_FILE_SIZE
+          )}`,
+        });
         return;
       }
-      setFormData(prev => ({
-        ...prev,
-        file
-      }));
-      setMessage({ type: '', text: '' });
-    }
-  };
-
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      const error = validateFile(file);
-      if (error) {
-        setMessage({ type: 'error', text: error });
-        return;
-      }
-      setFormData(prev => ({
-        ...prev,
-        file
-      }));
-      setMessage({ type: '', text: '' });
+      setFile(selectedFile);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.category) {
-      setMessage({ type: 'error', text: 'Please select a category' });
+
+    if (!user) {
+      setMessage({
+        type: "error",
+        text: "You must be logged in to upload resources.",
+      });
       return;
     }
 
-    const error = validateFile(formData.file);
-    if (error) {
-      setMessage({ type: 'error', text: error });
+    if (!file) {
+      setMessage({ type: "error", text: "Please select a file to upload." });
+      return;
+    }
+
+    if (!title) {
+      setMessage({ type: "error", text: "Please enter a title." });
       return;
     }
 
     setUploading(true);
-    setMessage({ type: '', text: '' });
+    setMessage({ type: "", text: "" });
 
     try {
-      // Create resource object
-      const resource = {
-        title: formData.title,
-        description: formData.description,
-        category: formData.category,
-        courseCode: formData.courseCode,
-        author: formData.author,
-        department: formData.department,
-        level: formData.level,
-        semester: formData.semester,
-        academicYear: formData.academicYear,
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(Boolean),
-        fileType: formData.file.name.split('.').pop().toUpperCase(),
-        fileSize: formData.file.size,
-        uploadDate: new Date().toISOString(),
-        downloads: 0,
-        fileUrl: URL.createObjectURL(formData.file) // Temporary URL for demo
-      };
+      // Determine file type
+      const fileExtension = file.name.split(".").pop().toLowerCase();
+      const fileType = getFileType(fileExtension);
 
-      // Add resource to localStorage
-      addResource(resource);
+      // Create a unique filename
+      const fileName = `${category}/${Date.now()}_${file.name.replace(
+        /\s+/g,
+        "_"
+      )}`;
 
-      setMessage({
-        type: 'success',
-        text: 'Resource uploaded successfully!'
-      });
+      // Upload file to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from("resources")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL for the file
+      const { data: urlData } = supabase.storage
+        .from("resources")
+        .getPublicUrl(fileName);
+
+      if (!urlData?.publicUrl) {
+        throw new Error("Failed to get public URL for the file");
+      }
+
+      console.log("Uploading resource with category:", category);
+
+      // Add record to resources table directly
+      const { data: insertData, error: insertError } = await supabase
+        .from("resources")
+        .insert([
+          {
+            title,
+            description,
+            category,
+            type: fileType,
+            download_url: urlData.publicUrl,
+            file_path: fileName,
+            file_size: file.size,
+            created_by: user.id,
+            upload_date: new Date().toISOString(),
+          },
+        ])
+        .select();
+
+      if (insertError) throw insertError;
+
+      // Set the newly added ID for highlighting
+      if (insertData && insertData[0]) {
+        setNewlyAddedId(insertData[0].id);
+      }
 
       // Reset form
-      setFormData({
-        title: '',
-        description: '',
-        category: '',
-        courseCode: '',
-        author: '',
-        department: '',
-        level: '',
-        semester: '',
-        academicYear: '',
-        tags: '',
-        file: null
-      });
-    } catch (error) {
+      setFile(null);
+      setTitle("");
+      setDescription("");
+      setCategory(RESOURCE_CATEGORIES[0].value);
+
+      // Show success message
       setMessage({
-        type: 'error',
-        text: 'Failed to upload resource. Please try again.'
+        type: "success",
+        text: "Resource uploaded successfully!",
+      });
+
+      // Refresh resources list
+      await fetchResources();
+
+      // Scroll to the resources section
+      if (resourcesRef.current) {
+        resourcesRef.current.scrollIntoView({ behavior: "smooth" });
+      }
+    } catch (error) {
+      console.error("Error uploading resource:", error);
+      setMessage({
+        type: "error",
+        text:
+          "Failed to upload resource: " +
+          (error.message || "Please try again."),
       });
     } finally {
       setUploading(false);
     }
   };
 
+  const getFileType = (extension) => {
+    const documentTypes = ["pdf", "doc", "docx", "txt", "rtf"];
+    const imageTypes = ["jpg", "jpeg", "png", "gif", "bmp"];
+    const videoTypes = ["mp4", "avi", "mov", "wmv"];
+    const audioTypes = ["mp3", "wav", "ogg"];
+
+    if (documentTypes.includes(extension)) return "document";
+    if (imageTypes.includes(extension)) return "image";
+    if (videoTypes.includes(extension)) return "video";
+    if (audioTypes.includes(extension)) return "audio";
+    return "other";
+  };
+
+  // Show delete confirmation dialog instead of using window.confirm
+  const handleDeleteClick = (id, filePath) => {
+    setResourceToDelete({ id, filePath });
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!resourceToDelete) return;
+
+    try {
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from("resources")
+        .remove([resourceToDelete.filePath]);
+
+      if (storageError) throw storageError;
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from("resources")
+        .delete()
+        .eq("id", resourceToDelete.id);
+
+      if (dbError) throw dbError;
+
+      // Refresh list
+      fetchResources();
+
+      setMessage({
+        type: "success",
+        text: "Resource deleted successfully!",
+      });
+    } catch (error) {
+      console.error("Error deleting resource:", error);
+      setMessage({
+        type: "error",
+        text: "Failed to delete resource. Please try again.",
+      });
+    } finally {
+      setShowDeleteConfirm(false);
+      setResourceToDelete(null);
+    }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteConfirm(false);
+    setResourceToDelete(null);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white shadow rounded-lg">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 flex items-center justify-center z-10 bg-black bg-opacity-50">
+            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Confirm Deletion
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Are you sure you want to delete this resource? This action
+                cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={cancelDelete}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white shadow rounded-lg mb-8">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-medium text-gray-900">Upload Resource</h2>
+            <h2 className="text-xl font-medium text-gray-900">
+              Upload Resource
+            </h2>
           </div>
 
           {message.text && (
             <div
               className={`px-6 py-4 ${
-                message.type === 'success' ? 'bg-green-50' : 'bg-red-50'
+                message.type === "success" ? "bg-green-50" : "bg-red-50"
               }`}
             >
               <p
                 className={`text-sm ${
-                  message.type === 'success' ? 'text-green-700' : 'text-red-700'
+                  message.type === "success" ? "text-green-700" : "text-red-700"
                 }`}
               >
                 {message.text}
@@ -210,190 +339,70 @@ export default function ResourceUpload() {
           )}
 
           <form onSubmit={handleSubmit} className="px-6 py-4 space-y-6">
-            {/* Basic Information */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  id="title"
-                  name="title"
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.title}
-                  onChange={handleInputChange}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="category" className="block text-sm font-medium text-gray-700">
-                  Category *
-                </label>
-                <select
-                  id="category"
-                  name="category"
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.category}
-                  onChange={handleInputChange}
-                >
-                  <option value="">Select a category</option>
-                  {Object.entries(RESOURCE_CATEGORIES).map(([key, { title }]) => (
-                    <option key={key} value={key}>
-                      {title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
+            {/* Title Field */}
             <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-                Description *
+              <label
+                htmlFor="title"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Title
               </label>
-              <textarea
-                id="description"
-                name="description"
-                rows={3}
+              <input
+                type="text"
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                value={formData.description}
-                onChange={handleInputChange}
               />
             </div>
 
-            {/* Course Information */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="courseCode" className="block text-sm font-medium text-gray-700">
-                  Course Code
-                </label>
-                <input
-                  type="text"
-                  id="courseCode"
-                  name="courseCode"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.courseCode}
-                  onChange={handleInputChange}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="author" className="block text-sm font-medium text-gray-700">
-                  Author/Lecturer
-                </label>
-                <input
-                  type="text"
-                  id="author"
-                  name="author"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.author}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-
-            {/* Academic Information */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-              <div>
-                <label htmlFor="department" className="block text-sm font-medium text-gray-700">
-                  Department
-                </label>
-                <input
-                  type="text"
-                  id="department"
-                  name="department"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.department}
-                  onChange={handleInputChange}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="level" className="block text-sm font-medium text-gray-700">
-                  Level
-                </label>
-                <select
-                  id="level"
-                  name="level"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.level}
-                  onChange={handleInputChange}
-                >
-                  <option value="">Select level</option>
-                  <option value="100">100 Level</option>
-                  <option value="200">200 Level</option>
-                  <option value="300">300 Level</option>
-                  <option value="400">400 Level</option>
-                  <option value="500">500 Level</option>
-                  <option value="postgraduate">Postgraduate</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="semester" className="block text-sm font-medium text-gray-700">
-                  Semester
-                </label>
-                <select
-                  id="semester"
-                  name="semester"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.semester}
-                  onChange={handleInputChange}
-                >
-                  <option value="">Select semester</option>
-                  <option value="first">First Semester</option>
-                  <option value="second">Second Semester</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="academicYear" className="block text-sm font-medium text-gray-700">
-                  Academic Year
-                </label>
-                <input
-                  type="text"
-                  id="academicYear"
-                  name="academicYear"
-                  placeholder="e.g., 2023/2024"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.academicYear}
-                  onChange={handleInputChange}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="tags" className="block text-sm font-medium text-gray-700">
-                  Tags
-                </label>
-                <input
-                  type="text"
-                  id="tags"
-                  name="tags"
-                  placeholder="Separate tags with commas"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  value={formData.tags}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-
-            {/* File Upload */}
+            {/* Description Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">File *</label>
-              <div
-                className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md ${
-                  dragActive ? 'border-primary-500 bg-primary-50' : ''
-                }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
+              <label
+                htmlFor="description"
+                className="block text-sm font-medium text-gray-700"
               >
+                Description
+              </label>
+              <textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              />
+            </div>
+
+            {/* Category Field */}
+            <div>
+              <label
+                htmlFor="category"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Category
+              </label>
+              <select
+                id="category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                required
+              >
+                {RESOURCE_CATEGORIES.map((cat) => (
+                  <option key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* File Upload Field */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                File
+              </label>
+              <div className="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
                 <div className="space-y-1 text-center">
                   <svg
                     className="mx-auto h-12 w-12 text-gray-400"
@@ -412,7 +421,7 @@ export default function ResourceUpload() {
                   <div className="flex text-sm text-gray-600">
                     <label
                       htmlFor="file-upload"
-                      className="relative cursor-pointer rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
+                      className="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"
                     >
                       <span>Upload a file</span>
                       <input
@@ -427,60 +436,160 @@ export default function ResourceUpload() {
                     <p className="pl-1">or drag and drop</p>
                   </div>
                   <p className="text-xs text-gray-500">
-                    {formData.category
-                      ? `Allowed types: ${RESOURCE_CATEGORIES[formData.category].allowedTypes.join(
-                          ', '
-                        )}`
-                      : 'Please select a category first'}
+                    PDF, DOC, XLS, PPT, MP4, MP3, JPG, PNG up to{" "}
+                    {formatFileSize(MAX_FILE_SIZE)}
                   </p>
-                  <p className="text-xs text-gray-500">Maximum file size: 50MB</p>
+                  {file && (
+                    <p className="text-sm text-indigo-600 font-medium">
+                      Selected: {file.name} ({formatFileSize(file.size)})
+                    </p>
+                  )}
                 </div>
               </div>
-              {formData.file && (
-                <p className="mt-2 text-sm text-gray-500">
-                  Selected file: {formData.file.name} ({(formData.file.size / (1024 * 1024)).toFixed(2)} MB)
-                </p>
-              )}
             </div>
 
-            <div className="flex justify-end">
+            {/* Submit Button */}
+            <div className="pt-5">
               <button
                 type="submit"
                 disabled={uploading}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
               >
-                {uploading ? (
-                  <>
-                    <svg
-                      className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Uploading...
-                  </>
-                ) : (
-                  'Upload Resource'
-                )}
+                {uploading ? "Uploading..." : "Upload Resource"}
               </button>
             </div>
           </form>
         </div>
+
+        {/* Resources List */}
+        <div ref={resourcesRef} className="bg-white shadow rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-medium text-gray-900">
+              Manage Resources
+            </h2>
+          </div>
+
+          <div className="px-6 py-4">
+            {loading ? (
+              <p className="text-center text-gray-500">Loading resources...</p>
+            ) : resources.length === 0 ? (
+              <p className="text-center text-gray-500">
+                No resources available.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Title
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Category
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Type
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Size
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Downloads
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Uploaded
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {resources.map((resource) => (
+                      <tr
+                        key={resource.id}
+                        className={
+                          newlyAddedId === resource.id
+                            ? "bg-green-50 transition-colors duration-1000"
+                            : ""
+                        }
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {resource.title}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {RESOURCE_CATEGORIES.find(
+                            (cat) => cat.value === resource.category
+                          )?.label || resource.category}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {resource.type}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatFileSize(resource.file_size)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {resource.downloads}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(resource.upload_date).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <a
+                            href={resource.download_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          >
+                            View
+                          </a>
+                          <button
+                            onClick={() =>
+                              handleDeleteClick(resource.id, resource.file_path)
+                            }
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
-} 
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
