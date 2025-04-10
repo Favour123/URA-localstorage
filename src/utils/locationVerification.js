@@ -142,3 +142,21 @@ export const getLocationDetails = async () => {
     timestamp: new Date().toISOString(),
   };
 };
+
+// Add new function to fetch access logs
+export const fetchAccessLogs = async () => {
+  try {
+    const { data, error } = await supabase.rpc("get_access_logs");
+
+    if (error) throw error;
+
+    // Transform the data to match the expected format
+    return data.map((log) => ({
+      ...log,
+      timestamp: log.log_time, // Map log_time to timestamp for compatibility
+    }));
+  } catch (error) {
+    console.error("Error fetching access logs:", error);
+    throw error;
+  }
+};
