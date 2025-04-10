@@ -14,10 +14,6 @@ export default function ResourceDetail() {
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
 
-  useEffect(() => {
-    loadResource();
-  }, [id]);
-
   const loadResource = async () => {
     try {
       const resources = await getResources();
@@ -30,6 +26,14 @@ export default function ResourceDetail() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const fetchResource = async () => {
+      await loadResource();
+    };
+    fetchResource();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDownload = async () => {
     try {
@@ -78,10 +82,10 @@ export default function ResourceDetail() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-6">
-              <div>
+          <div>
             <p className="text-sm text-gray-500">Category</p>
             <p className="font-medium">{resource.category}</p>
-                </div>
+          </div>
           <div>
             <p className="text-sm text-gray-500">File Type</p>
             <p className="font-medium">{resource.type}</p>
@@ -89,12 +93,12 @@ export default function ResourceDetail() {
           <div>
             <p className="text-sm text-gray-500">File Size</p>
             <p className="font-medium">{resource.file_size}</p>
-            </div>
-              <div>
+          </div>
+          <div>
             <p className="text-sm text-gray-500">Downloads</p>
             <p className="font-medium">{resource.downloads}</p>
-              </div>
-              <div>
+          </div>
+          <div>
             <p className="text-sm text-gray-500">Upload Date</p>
             <p className="font-medium">
               {new Date(resource.upload_date).toLocaleDateString()}
@@ -138,4 +142,4 @@ export default function ResourceDetail() {
       </div>
     </div>
   );
-} 
+}

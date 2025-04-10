@@ -286,25 +286,3 @@ export const deleteResource = async (resourceId) => {
     throw error;
   }
 };
-
-// Comment out or remove this function if your table doesn't have a views column
-// export const incrementQuestionViews = async (questionId) => {
-//   try {
-//     const { data: question } = await supabase
-//       .from("questions")
-//       .select("views")
-//       .eq("id", questionId)
-//       .single();
-//
-//     const currentViews = question?.views || 0;
-//
-//     const { error } = await supabase
-//       .from("questions")
-//       .update({ views: currentViews + 1 })
-//       .eq("id", questionId);
-//
-//     if (error) throw error;
-//   } catch (error) {
-//     console.error("Error incrementing question views:", error);
-//   }
-// };

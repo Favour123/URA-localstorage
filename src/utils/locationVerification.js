@@ -52,12 +52,12 @@ export const verifyLocation = () => {
           });
           console.log("Adeleke coordinates:", ADELEKE_COORDINATES);
 
-        const distance = calculateDistance(
-          position.coords.latitude,
-          position.coords.longitude,
-          ADELEKE_COORDINATES.latitude,
-          ADELEKE_COORDINATES.longitude
-        );
+          const distance = calculateDistance(
+            position.coords.latitude,
+            position.coords.longitude,
+            ADELEKE_COORDINATES.latitude,
+            ADELEKE_COORDINATES.longitude
+          );
 
           console.log("Distance from Adeleke:", distance, "km");
 
