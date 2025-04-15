@@ -88,13 +88,12 @@ export default function ManageChats() {
     try {
       setSubmitting((prev) => ({ ...prev, [questionId]: true }));
 
-      // Direct insert to answers table
+      // Insert the answer with only the required fields
       const { error } = await supabase.from("answers").insert([
         {
           question_id: questionId,
           content: responses[questionId],
-          admin_id: user?.id,
-          admin_email: user?.email || "Admin",
+          user_email: user.email, // Use the logged-in user's email
         },
       ]);
 
@@ -110,7 +109,7 @@ export default function ManageChats() {
       fetchQuestions();
     } catch (err) {
       console.error("Error submitting response:", err);
-      alert("Failed to submit response. Please try again.");
+      setError(err.message);
     } finally {
       setSubmitting((prev) => ({ ...prev, [questionId]: false }));
     }
