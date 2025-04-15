@@ -107,19 +107,48 @@ export const verifyLocation = () => {
 
 const logAccessAttempt = async (locationData) => {
   try {
-    const { error } = await supabase.from("access_logs").insert([
-      {
-        latitude: locationData.latitude,
-        longitude: locationData.longitude,
-        distance_km: locationData.distance,
-        allowed: locationData.allowed,
-        timestamp: new Date().toISOString(),
-      },
-    ]);
+    // First try the RPC method
+    try {
+      const { data, error } = await supabase.rpc("insert_access_log", {
+        p_latitude: locationData.latitude,
+        p_longitude: locationData.longitude,
+        p_distance_km: parseFloat(
+          locationData.distance_km || locationData.distance
+        ),
+        p_allowed: locationData.allowed,
+        p_details: {
+          timestamp: new Date().toISOString(),
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          distance: locationData.distance_km || locationData.distance,
+          status: locationData.allowed ? "allowed" : "denied",
+        },
+      });
 
-    if (error) throw error;
+      if (error) throw error;
+      return data;
+    } catch (rpcError) {
+      console.warn(
+        "RPC method failed, falling back to direct insert:",
+        rpcError
+      );
+
+      // Fallback to direct insert
+      const { error } = await supabase.from("access_logs").insert([
+        {
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+          distance_km: locationData.distance_km || locationData.distance,
+          allowed: locationData.allowed,
+          log_timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      if (error) throw error;
+    }
   } catch (error) {
     console.error("Error logging access attempt:", error);
+    throw error;
   }
 };
 
@@ -146,17 +175,24 @@ export const getLocationDetails = async () => {
 // Add new function to fetch access logs
 export const fetchAccessLogs = async () => {
   try {
+    // First try direct query
+    const { data, error } = await supabase
+      .from("access_logs")
+      .select("*")
+      .order("log_timestamp", { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+
+    return data;
+  } catch (directError) {
+    console.warn("Direct query failed, trying RPC method:", directError);
+
+    // Fallback to RPC method
     const { data, error } = await supabase.rpc("get_access_logs");
 
     if (error) throw error;
 
-    // Transform the data to match the expected format
-    return data.map((log) => ({
-      ...log,
-      timestamp: log.log_time, // Map log_time to timestamp for compatibility
-    }));
-  } catch (error) {
-    console.error("Error fetching access logs:", error);
-    throw error;
+    return data;
   }
 };

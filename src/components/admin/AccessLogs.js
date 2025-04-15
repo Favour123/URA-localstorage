@@ -35,23 +35,46 @@ export default function AccessLogs() {
           <thead>
             <tr>
               <th className="px-4 py-2 border-b">Time</th>
-              <th className="px-4 py-2 border-b">Latitude</th>
-              <th className="px-4 py-2 border-b">Longitude</th>
+              <th className="px-4 py-2 border-b">Location</th>
               <th className="px-4 py-2 border-b">Distance (km)</th>
-              <th className="px-4 py-2 border-b">Allowed</th>
+              <th className="px-4 py-2 border-b">Status</th>
+              <th className="px-4 py-2 border-b">Details</th>
             </tr>
           </thead>
           <tbody>
             {logs.map((log) => (
-              <tr key={log.id}>
+              <tr
+                key={log.id}
+                className={log.allowed ? "bg-green-50" : "bg-red-50"}
+              >
                 <td className="px-4 py-2 border-b">
-                  {new Date(log.timestamp).toLocaleString()}
+                  {new Date(log.log_timestamp).toLocaleString()}
                 </td>
-                <td className="px-4 py-2 border-b">{log.latitude}</td>
-                <td className="px-4 py-2 border-b">{log.longitude}</td>
+                <td className="px-4 py-2 border-b">
+                  {log.latitude.toFixed(6)}, {log.longitude.toFixed(6)}
+                </td>
                 <td className="px-4 py-2 border-b">{log.distance_km}</td>
                 <td className="px-4 py-2 border-b">
-                  {log.allowed ? "Yes" : "No"}
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      log.allowed
+                        ? "bg-green-100 text-green-800"
+                        : "bg-red-100 text-red-800"
+                    }`}
+                  >
+                    {log.allowed ? "Allowed" : "Denied"}
+                  </span>
+                </td>
+                <td className="px-4 py-2 border-b">
+                  <button
+                    onClick={() => {
+                      const details = log.details || {};
+                      alert(JSON.stringify(details, null, 2));
+                    }}
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    View Details
+                  </button>
                 </td>
               </tr>
             ))}
