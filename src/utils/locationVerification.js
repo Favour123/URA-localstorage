@@ -10,7 +10,7 @@ const ADELEKE_COORDINATES = {
 };
 
 // Maximum allowed distance from campus in kilometers
-const MAX_DISTANCE_KM = 100;
+const MAX_DISTANCE_KM = 200;
 
 // Convert degrees to radians
 const toRad = (degrees) => {
